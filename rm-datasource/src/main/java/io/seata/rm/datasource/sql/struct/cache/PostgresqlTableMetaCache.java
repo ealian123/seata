@@ -19,8 +19,6 @@ import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
-
 import io.seata.common.exception.ShouldNeverHappenException;
 import io.seata.common.loader.LoadLevel;
 import io.seata.common.util.StringUtils;
@@ -64,21 +62,14 @@ public class PostgresqlTableMetaCache extends AbstractTableMetaCache {
 
     @Override
     protected TableMeta fetchSchema(Connection connection, String tableName) throws SQLException {
-        Statement stmt = null;
         try {
-            stmt = connection.createStatement();
             DatabaseMetaData dbmd = connection.getMetaData();
             tableName = keywordChecker.checkAndReplace(tableName);
             return resultSetMetaToSchema(dbmd, tableName);
+        } catch (SQLException sqlEx) {
+            throw sqlEx;
         } catch (Exception e) {
-            if (e instanceof SQLException) {
-                throw e;
-            }
             throw new SQLException("Failed to fetch schema of " + tableName, e);
-        } finally {
-            if (stmt != null) {
-                stmt.close();
-            }
         }
     }
 
@@ -100,11 +91,23 @@ public class PostgresqlTableMetaCache extends AbstractTableMetaCache {
          * select * from "Select"
          * select * from "Sel""ect"
          * select * from "Sel'ect"
+         * select * from TEST.test
+         * select * from test.TEST
+         * select * from "Test".test
+         * select * from "Test"."Select"
          */
         if (null != schemaName) {
-            schemaName = schemaName.replaceAll("(^\")|(\"$)", "");
+            if (schemaName.startsWith("\"") && schemaName.endsWith("\"")) {
+                schemaName = schemaName.replaceAll("(^\")|(\"$)", "");
+            } else {
+                schemaName = schemaName.toLowerCase();
+            }
         }
-        tableName = tableName.replaceAll("(^\")|(\"$)", "");
+        if (tableName.startsWith("\"") && tableName.endsWith("\"")) {
+            tableName = tableName.replaceAll("(^\")|(\"$)", "");
+        } else {
+            tableName = tableName.toLowerCase();
+        }
 
         try (ResultSet rsColumns = dbmd.getColumns(null, schemaName, tableName, "%");
              ResultSet rsIndex = dbmd.getIndexInfo(null, schemaName, tableName, false, true);
